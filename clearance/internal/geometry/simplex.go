@@ -61,26 +61,26 @@ func reorderCCW(s []SupportPoint) []SupportPoint {
 // evolveTriangle performs one GJK update for a three-vertex simplex whose
 // points are reordered to CCW. It returns the reduced simplex, the next
 // search direction and whether the origin is contained.
+//
+// The simplex is reduced to its feature closest to the origin: when the
+// origin lies in the Voronoi region of a vertex it is "outside" across the
+// two edges meeting there, and the correct reduction is that single vertex —
+// keeping either whole edge would search along a direction that need not
+// approach the origin and could terminate on a non-closest feature.
 func evolveTriangle(s []SupportPoint, tol float64) (contained bool, out []SupportPoint, dir Vec2) {
 	t := reorderCCW(s)
 	// For a CCW triangle the interior lies to the left of every directed
 	// edge p_i -> p_j; its inward normal is edge.PerpLeft().
-	type edge struct {
-		i, j int
-		sp   [2]SupportPoint
-	}
-	edges := [3]edge{
-		{i: 0, j: 1, sp: [2]SupportPoint{t[0], t[1]}},
-		{i: 1, j: 2, sp: [2]SupportPoint{t[1], t[2]}},
-		{i: 2, j: 0, sp: [2]SupportPoint{t[2], t[0]}},
-	}
+	edges := [3][2]int{{0, 1}, {1, 2}, {2, 0}}
 
-	bestOutside := 0.0
-	bestEdge := -1
-	var bestNormal Vec2
 	inside := true
-	for _, e := range edges {
-		evec := t[e.j].V.Sub(t[e.i].V)
+	bestD := math.Inf(1)
+	bestEdge := -1
+	bestT := 0.0
+	var bestQ Vec2
+	for ei, e := range edges {
+		p, q := t[e[0]].V, t[e[1]].V
+		evec := q.Sub(p)
 		if evec.Len2() <= tol*tol {
 			continue
 		}
@@ -88,22 +88,42 @@ func evolveTriangle(s []SupportPoint, tol float64) (contained bool, out []Suppor
 		// Signed distance of the origin past this edge: nIn·p > 0 means
 		// the origin lies beyond the edge (outside the triangle), since
 		// the left normal of a CCW directed edge points inward.
-		outDist := nIn.Dot(t[e.i].V)
-		if outDist > tol {
-			inside = false
-			if outDist > bestOutside {
-				bestOutside = outDist
-				bestEdge = e.i
-				bestNormal = nIn.Scale(-1)
-			}
+		outDist := nIn.Dot(p)
+		if outDist <= tol {
+			continue
+		}
+		inside = false
+		// The closest boundary point to an exterior origin lies on an
+		// edge the origin is outside of; take the minimum over those
+		// edges, clamping to endpoints so vertex regions reduce to the
+		// vertex itself.
+		et := clampUnit(p.Scale(-1).Dot(evec) / evec.Len2())
+		c := p.Add(evec.Scale(et))
+		if d := c.Len(); d < bestD {
+			bestD = d
+			bestEdge = ei
+			bestT = et
+			bestQ = c
 		}
 	}
 	if inside {
 		return true, t, Vec2{}
 	}
 	e := edges[bestEdge]
-	// Search outward across that edge; keep the edge as a segment simplex.
-	return false, []SupportPoint{e.sp[1], e.sp[0]}, bestNormal
+	switch {
+	case bestT <= paramTol:
+		// Voronoi region of the edge's first vertex.
+		sp := t[e[0]]
+		return false, []SupportPoint{sp}, sp.V.Scale(-1)
+	case bestT >= 1-paramTol:
+		// Voronoi region of the edge's second vertex.
+		sp := t[e[1]]
+		return false, []SupportPoint{sp}, sp.V.Scale(-1)
+	default:
+		// Interior of the edge: keep the segment and search from its
+		// closest point toward the origin.
+		return false, []SupportPoint{t[e[1]], t[e[0]]}, bestQ.Scale(-1)
+	}
 }
 
 // closestLineFeature reduces a degenerate (collinear) triangle to the segment

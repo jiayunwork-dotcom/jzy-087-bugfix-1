@@ -49,6 +49,18 @@ func gjk(a, b *Polygon) (*gjkState, error) {
 			}
 			return &gjkState{contained: false, simplex: simplex, steps: step}, nil
 		}
+		// No-progress termination: every evolve step keeps d = -q with q
+		// the closest point of the current simplex, so q·d = -|d|². When
+		// the support point does not reach past the plane through q
+		// perpendicular to d, q is already the closest point of the whole
+		// CSO. This also covers support ties on CSO edges perpendicular
+		// to d, where the support point is new (no duplicate) yet cannot
+		// improve the distance — without this check the iteration would
+		// bounce between the tied endpoints forever. It never fires when
+		// the origin is inside the CSO: then sp.V·d >= 0 > -|d|².
+		if sp.V.Dot(d) <= tol*max(1.0, d.Len())-d.Len2() {
+			return &gjkState{contained: false, simplex: simplex, steps: step}, nil
+		}
 		simplex = append([]SupportPoint{sp}, simplex...)
 
 		switch len(simplex) {
