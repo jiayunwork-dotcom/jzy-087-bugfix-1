@@ -77,7 +77,6 @@ func evolveTriangle(s []SupportPoint, tol float64) (contained bool, out []Suppor
 
 	bestOutside := 0.0
 	bestEdge := -1
-	var bestNormal Vec2
 	inside := true
 	for _, e := range edges {
 		evec := t[e.j].V.Sub(t[e.i].V)
@@ -94,7 +93,6 @@ func evolveTriangle(s []SupportPoint, tol float64) (contained bool, out []Suppor
 			if outDist > bestOutside {
 				bestOutside = outDist
 				bestEdge = e.i
-				bestNormal = nIn.Scale(-1)
 			}
 		}
 	}
@@ -102,8 +100,15 @@ func evolveTriangle(s []SupportPoint, tol float64) (contained bool, out []Suppor
 		return true, t, Vec2{}
 	}
 	e := edges[bestEdge]
-	// Search outward across that edge; keep the edge as a segment simplex.
-	return false, []SupportPoint{e.sp[1], e.sp[0]}, bestNormal
+	// The origin lies beyond this edge, so the triangle's closest feature
+	// is the edge's own closest feature. Reduce the segment exactly as in
+	// the line case: it collapses to a single endpoint when the origin's
+	// perpendicular foot falls outside the segment, and the next search
+	// direction then points from that endpoint toward the origin.
+	// Keeping the whole edge and searching along its normal instead would
+	// strand the iteration on a non-closest vertex: the next support call
+	// finds no new point and the loop terminates with a too-large gap.
+	return evolveLine([]SupportPoint{e.sp[1], e.sp[0]}, tol)
 }
 
 // closestLineFeature reduces a degenerate (collinear) triangle to the segment

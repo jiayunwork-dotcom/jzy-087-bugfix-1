@@ -40,13 +40,22 @@ func gjk(a, b *Polygon) (*gjkState, error) {
 		}
 		sp := support(a, b, d)
 
-		// The support point must make progress toward the origin along d.
-		// If it is already part of the simplex, the closest feature has
-		// been reached and the origin stays outside.
-		if duplicatesAny(sp, simplex, tol) {
-			if sp.V.Len() <= tol {
-				return &gjkState{contained: true, simplex: simplex, steps: step}, nil
-			}
+		// A support point (numerically) at the origin: the origin lies on
+		// the CSO boundary — boundary contact, left to EPA.
+		if sp.V.Len() <= tol {
+			return &gjkState{contained: true, simplex: simplex, steps: step}, nil
+		}
+
+		// No-progress termination. The loop invariant is d = -q with q the
+		// closest point of the current simplex, so q·d = -|d|² and the
+		// headroom toward the origin along d is sp.V·d + |d|². When that
+		// headroom is not meaningfully positive, no CSO point lies closer
+		// to the origin than q (up to tolerance): the closest feature has
+		// been found. This subsumes termination on a repeated support
+		// point and, unlike it, also stops on support ties that would
+		// otherwise re-add a just-dropped vertex and ping-pong the
+		// simplex until the step budget is exhausted.
+		if sp.V.Dot(d) <= tol*d.Len()-d.Len2() {
 			return &gjkState{contained: false, simplex: simplex, steps: step}, nil
 		}
 		simplex = append([]SupportPoint{sp}, simplex...)

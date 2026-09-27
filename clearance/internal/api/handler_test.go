@@ -89,6 +89,40 @@ func TestCollide_Penetrated(t *testing.T) {
 	}
 }
 
+// TestCollide_VertexFacingEdgeInterior is the field-reported regression over
+// HTTP: a vertex of B faces the interior of A's top edge (y=0, x in [-1,1]).
+// The clearance must be the perpendicular drop 5 with witnesses (0,0)/(0,5),
+// never the larger distance to an edge endpoint.
+func TestCollide_VertexFacingEdgeInterior(t *testing.T) {
+	r := Router()
+	w := httptest.NewRecorder()
+	a := []pt{{-2, -4}, {10, -3}, {1, 0}, {-1, 0}}
+	b := []pt{{-7, 6}, {0, 5}, {2, 8}}
+	req := httptest.NewRequest(http.MethodPost, "/collide", strings.NewReader(body(a, b)))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d body = %s", w.Code, w.Body.String())
+	}
+	var res geometry.Result
+	if err := json.Unmarshal(w.Body.Bytes(), &res); err != nil {
+		t.Fatalf("decode: %v body=%s", err, w.Body.String())
+	}
+	if res.Status != geometry.StatusSeparated {
+		t.Fatalf("status = %s", res.Status)
+	}
+	if d := res.Distance - 5; d > 1e-12 || d < -1e-12 {
+		t.Fatalf("distance = %.15g, want 5", res.Distance)
+	}
+	if res.PointA.X != 0 || res.PointA.Y != 0 || res.PointB.X != 0 || res.PointB.Y != 5 {
+		t.Fatalf("witnesses = %v/%v, want (0,0)/(0,5)", res.PointA, res.PointB)
+	}
+	if res.Normal.X != 0 || res.Normal.Y != 1 {
+		t.Fatalf("normal = %v, want (0,1)", res.Normal)
+	}
+}
+
 func TestCollide_ErrorCases(t *testing.T) {
 	r := Router()
 	cases := []struct {
