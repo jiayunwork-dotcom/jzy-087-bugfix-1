@@ -40,10 +40,15 @@ func gjk(a, b *Polygon) (*gjkState, error) {
 		}
 		sp := support(a, b, d)
 
-		// The support point must make progress toward the origin along d.
-		// If it is already part of the simplex, the closest feature has
-		// been reached and the origin stays outside.
-		if duplicatesAny(sp, simplex, tol) {
+		// Termination test of the distance GJK iteration: d points from the
+		// current closest feature point q toward the origin (d = -q), and
+		// q·d = -|d|² is the bound on h_{A⊖B}(d) implied by that feature.
+		// No CSO vertex can project farther toward the origin than q once
+		// the closest feature has been reached; testing support progress is
+		// both necessary and sufficient (identity checks alone miss near-tie
+		// supports and let the iteration cycle on sliver simplices).
+		progress := sp.V.Dot(d) + d.Len2()
+		if progress <= eps*d.Len2() || duplicatesAny(sp, simplex, tol) {
 			if sp.V.Len() <= tol {
 				return &gjkState{contained: true, simplex: simplex, steps: step}, nil
 			}
@@ -53,7 +58,7 @@ func gjk(a, b *Polygon) (*gjkState, error) {
 
 		switch len(simplex) {
 		case 2:
-			contained, out, nd := evolveLine(simplex, tol)
+			contained, out, nd := reduceSegment(simplex, tol)
 			simplex, d = out, nd
 			if contained {
 				return &gjkState{contained: true, simplex: simplex, steps: step}, nil
@@ -71,7 +76,7 @@ func gjk(a, b *Polygon) (*gjkState, error) {
 				}
 				continue
 			}
-			contained, out, nd := evolveTriangle(simplex, tol)
+			contained, out, nd := reduceTriangle(simplex, tol)
 			simplex, d = out, nd
 			if contained {
 				return &gjkState{contained: true, simplex: simplex, steps: step}, nil
